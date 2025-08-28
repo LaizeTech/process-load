@@ -15,7 +15,7 @@ DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_NAME = os.getenv("DB_NAME")
 
 # Diretório monitorado
-WATCH_DIR = r"C:\Users\SeuUsuario\Documents\pasta_csv"  # altere para o seu caminho
+WATCH_DIR = r"C:\Users\Ayrton Casa\Documents\SPTech\2025\PI\Projeto\bucket-trusted"  # altere para o seu caminho
 PROCESSED_DIR = os.path.join(WATCH_DIR, "processados")
 
 # Criar pasta de processados se não existir
@@ -114,27 +114,71 @@ def insert_itens_saida(df, fkPlataforma, conn):
 # PROCESSAR UM ARQUIVO
 # ==============================
 def process_file(filepath):
-    print(f"Processando arquivo: {filepath}")
+    print(f"🚀 Processando arquivo: {filepath}")
     filename = os.path.basename(filepath)
+    
+    try:
+        # Extrair fkPlataforma do nome do arquivo
+        print(f"📝 Nome do arquivo: {filename}")
+        partes = filename.split("_")
+        print(f"   Partes: {partes}")
+        
+        # CORREÇÃO: Identificar posição correta do fkPlataforma
+        if filename.startswith("Order.all"):
+            # Para Order.all.20250101_20250131_1_20250828_120018_processado.csv
+            # fkPlataforma está na posição 2 (valor = 1)
+            fkPlataforma = int(partes[2])
+        elif filename.startswith("Vendas-"):
+            # Para Vendas-de6809a0-d616-40f2-8124-c1b3165b67b9_2_20250828_120021_processado.csv  
+            # fkPlataforma está na posição 1 (valor = 2)
+            fkPlataforma = int(partes[1])
+        else:
+            raise Exception(f"Formato de arquivo não reconhecido: {filename}")
+            
+        print(f"   fkPlataforma: {fkPlataforma}")
 
-    # Extrair fkPlataforma do nome do arquivo
-    fkPlataforma = int(filename.split("_")[2])
+        print(f"📖 Lendo CSV...")
+        
+        # CORREÇÃO: Detectar separador correto
+        with open(filepath, 'r', encoding='utf-8') as f:
+            primeira_linha = f.readline()
+            if ';' in primeira_linha and ',' not in primeira_linha:
+                separador = ';'
+                print(f"   Detectado separador: ';'")
+            else:
+                separador = ','
+                print(f"   Detectado separador: ','")
+        
+        df = pd.read_csv(filepath, sep=separador)
+        print(f"   Linhas: {len(df)}")
+        print(f"   Colunas disponíveis: {list(df.columns)}")
+        
+        # Mostrar primeiras linhas para debug
+        print(f"   Primeiras 3 linhas:")
+        for i in range(min(3, len(df))):
+            print(f"     {dict(df.iloc[i])}")
 
-    df = pd.read_csv(filepath)
+        print(f"🔌 Conectando ao banco...")
+        conn = get_connection()
 
-    conn = get_connection()
+        print(f"📊 Inserindo saídas...")
+        insert_saida(df, fkPlataforma, conn)
 
-    # Inserir Saídas
-    insert_saida(df, fkPlataforma, conn)
+        print(f"📦 Inserindo itens...")
+        insert_itens_saida(df, fkPlataforma, conn)
 
-    # Inserir ItensSaida
-    insert_itens_saida(df, fkPlataforma, conn)
+        conn.close()
+        print(f"✅ Dados inseridos com sucesso")
 
-    conn.close()
-
-    # Mover para pasta processados
-    os.rename(filepath, os.path.join(PROCESSED_DIR, filename))
-    print(f"Arquivo {filename} processado com sucesso e movido para {PROCESSED_DIR}")
+        # Mover para pasta processados
+        new_path = os.path.join(PROCESSED_DIR, filename)
+        print(f"📁 Movendo para: {new_path}")
+        os.rename(filepath, new_path)
+        print(f"✅ Arquivo movido com sucesso")
+        
+    except Exception as e:
+        print(f"❌ ERRO DETALHADO: {e}")
+        raise
 
 # ==============================
 # MONITORAR DIRETÓRIO
@@ -142,10 +186,28 @@ def process_file(filepath):
 def main():
     print(f"Monitorando pasta: {WATCH_DIR}")
     while True:
-        for file in os.listdir(WATCH_DIR):
-            if file.endswith(".csv"):
+        try:
+            arquivos = os.listdir(WATCH_DIR)
+            csvs = [f for f in arquivos if f.endswith(".csv")]
+            
+            print(f"Arquivos CSV encontrados: {csvs}")
+            
+            for file in csvs:
                 filepath = os.path.join(WATCH_DIR, file)
-                process_file(filepath)
+                print(f"Tentando processar: {file}")
+                
+                try:
+                    process_file(filepath)
+                    print(f"✅ {file} processado com sucesso")
+                except Exception as e:
+                    print(f"❌ ERRO ao processar {file}: {e}")
+                    print(f"   Arquivo NÃO foi movido para processados")
+                    # Continue para próximo arquivo mesmo com erro
+                    continue
+                    
+        except Exception as e:
+            print(f"❌ Erro ao listar diretório: {e}")
+            
         time.sleep(10)  # verifica a cada 10s
 
 if __name__ == "__main__":
