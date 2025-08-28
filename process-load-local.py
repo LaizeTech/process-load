@@ -1,13 +1,11 @@
 import os
-import json
-import boto3
-import pymysql
+import time
 import pandas as pd
-from io import StringIO
+import pymysql
 from dotenv import load_dotenv
 
 # ==============================
-# CARREGAR VARIÁVEIS DO .env
+# CONFIGURAÇÕES
 # ==============================
 load_dotenv()
 
@@ -16,7 +14,12 @@ DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_NAME = os.getenv("DB_NAME")
 
-s3 = boto3.client('s3')
+# Diretório monitorado
+WATCH_DIR = r"C:\Users\SeuUsuario\Documents\pasta_csv"  # altere para o seu caminho
+PROCESSED_DIR = os.path.join(WATCH_DIR, "processados")
+
+# Criar pasta de processados se não existir
+os.makedirs(PROCESSED_DIR, exist_ok=True)
 
 # ==============================
 # CONEXÃO MYSQL
@@ -31,7 +34,7 @@ def get_connection():
     )
 
 # ==============================
-# INSERIR SAÍDAS
+# FUNÇÃO INSERIR SAÍDAS
 # ==============================
 def insert_saida(df, fkPlataforma, conn):
     saidas = df[['numeroPedido', 'dtVenda', 'precoVenda', 'totalDesconto']].drop_duplicates()
@@ -55,7 +58,7 @@ def insert_saida(df, fkPlataforma, conn):
     conn.commit()
 
 # ==============================
-# INSERIR ITENS SAÍDA
+# FUNÇÃO INSERIR ITENS SAÍDA
 # ==============================
 def insert_itens_saida(df, fkPlataforma, conn):
     with conn.cursor() as cursor:
@@ -117,42 +120,42 @@ def insert_itens_saida(df, fkPlataforma, conn):
     conn.commit()
 
 # ==============================
-# HANDLER PRINCIPAL
+# PROCESSAR UM ARQUIVO
 # ==============================
-def lambda_handler(event, context):
-    try:
-        # Pegar info do evento S3
-        bucket = event['Records'][0]['s3']['bucket']['name']
-        key = event['Records'][0]['s3']['object']['key']
-        print(f"Processando arquivo: s3://{bucket}/{key}")
+def process_file(filepath):
+    print(f"Processando arquivo: {filepath}")
+    filename = os.path.basename(filepath)
 
-        # Extrair fkPlataforma do nome do arquivo
-        # Exemplo: "Order.all.20250101_20250131_1_20250819_173843_processado.csv"
-        fkPlataforma = int(key.split("_")[2])  # assumindo que sempre está nessa posição
+    # Extrair fkPlataforma do nome do arquivo
+    fkPlataforma = int(filename.split("_")[2])
 
-        # Baixar arquivo
-        obj = s3.get_object(Bucket=bucket, Key=key)
-        body = obj['Body'].read().decode('utf-8')
-        df = pd.read_csv(StringIO(body))
+    df = pd.read_csv(filepath)
 
-        conn = get_connection()
+    conn = get_connection()
 
-        # Inserir Saídas
-        insert_saida(df, fkPlataforma, conn)
+    # Inserir Saídas
+    insert_saida(df, fkPlataforma, conn)
 
-        # Inserir ItensSaida
-        insert_itens_saida(df, fkPlataforma, conn)
+    # Inserir ItensSaida
+    insert_itens_saida(df, fkPlataforma, conn)
 
-        conn.close()
+    conn.close()
 
-        return {
-            'statusCode': 200,
-            'body': json.dumps(f"Arquivo {key} processado com sucesso.")
-        }
+    # Mover para pasta processados
+    os.rename(filepath, os.path.join(PROCESSED_DIR, filename))
+    print(f"Arquivo {filename} processado com sucesso e movido para {PROCESSED_DIR}")
 
-    except Exception as e:
-        print(f"Erro: {e}")
-        return {
-            'statusCode': 500,
-            'body': json.dumps(str(e))
-        }
+# ==============================
+# MONITORAR DIRETÓRIO
+# ==============================
+def main():
+    print(f"Monitorando pasta: {WATCH_DIR}")
+    while True:
+        for file in os.listdir(WATCH_DIR):
+            if file.endswith(".csv"):
+                filepath = os.path.join(WATCH_DIR, file)
+                process_file(filepath)
+        time.sleep(10)  # verifica a cada 10s
+
+if __name__ == "__main__":
+    main()
