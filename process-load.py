@@ -67,19 +67,10 @@ def insert_itens_saida(df, fkPlataforma, conn):
                 raise Exception(f"Produto não encontrado: {row['nomeProduto']}")
             idProduto = produto['idProduto']
 
-            # Se não tem característica ou está vazia, usar 'sem caracteristica'
-            caracteristica_nome = row['caracteristicaProduto']
-            if pd.isna(caracteristica_nome) or caracteristica_nome == '' or caracteristica_nome is None:
-                caracteristica_nome = 'sem caracteristica'
-            
-            cursor.execute("SELECT idCaracteristica, idTipoCaracteristica FROM Caracteristica WHERE nomeCaracteristica = %s", (caracteristica_nome,))
+            cursor.execute("SELECT idCaracteristica, idTipoCaracteristica FROM Caracteristica WHERE nomeCaracteristica = %s", (row['caracteristicaProduto'],))
             caract = cursor.fetchone()
             if not caract:
-                # Se ainda não encontrou, tentar 'sem caracteristica' como fallback
-                cursor.execute("SELECT idCaracteristica, idTipoCaracteristica FROM Caracteristica WHERE nomeCaracteristica = %s", ('sem caracteristica',))
-                caract = cursor.fetchone()
-                if not caract:
-                    raise Exception(f"Característica não encontrada: {row['caracteristicaProduto']} e fallback 'sem caracteristica' também não encontrado")
+                raise Exception(f"Característica não encontrada: {row['caracteristicaProduto']}")
             idCaracteristica = caract['idCaracteristica']
             idTipoCaracteristica = caract['idTipoCaracteristica']
 
