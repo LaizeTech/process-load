@@ -39,18 +39,18 @@ def insert_saida(df, fkPlataforma, conn):
     with conn.cursor() as cursor:
         for _, row in saidas.iterrows():
             sql = """
-                INSERT INTO Saida (idEmpresa, idPlataforma, idTipoSaida, numeroPedido, dtVenda, precoVenda, totalDesconto, idStatusVenda)
+                INSERT INTO Saida (id_empresa, id_plataforma, id_tipo_saida, numero_pedido, dt_venda, preco_venda, total_desconto, id_status_venda)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """
             cursor.execute(sql, (
-                1,  # fkEmpresa fixo
+                1,  # id_empresa fixo
                 fkPlataforma,
-                1,  # fkTipoSaida fixo
+                1,  # id_tipo_saida fixo
                 row['numeroPedido'],
                 row['dtVenda'],
                 row['precoVenda'],
                 row['totalDesconto'],
-                1   # fkStatusVenda fixo
+                1   # id_status_venda fixo
             ))
     conn.commit()
 
@@ -61,45 +61,61 @@ def insert_itens_saida(df, fkPlataforma, conn):
     with conn.cursor() as cursor:
         for _, row in df.iterrows():
             # Buscar ids
-            cursor.execute("SELECT idProduto FROM Produto WHERE nomeProduto = %s", (row['nomeProduto'],))
+            cursor.execute("SELECT id_produto FROM Produto WHERE nome_produto = %s", (row['nomeProduto'],))
             produto = cursor.fetchone()
             if not produto:
                 raise Exception(f"Produto não encontrado: {row['nomeProduto']}")
-            idProduto = produto['idProduto']
+            idProduto = produto['id_produto']
 
-            cursor.execute("SELECT idCaracteristica, idTipoCaracteristica FROM Caracteristica WHERE nomeCaracteristica = %s", (row['caracteristicaProduto'],))
+            cursor.execute("SELECT id_caracteristica, id_tipo_caracteristica FROM Caracteristica WHERE nome_caracteristica = %s", (row['caracteristicaProduto'],))
             caract = cursor.fetchone()
             if not caract:
                 raise Exception(f"Característica não encontrada: {row['caracteristicaProduto']}")
-            idCaracteristica = caract['idCaracteristica']
-            idTipoCaracteristica = caract['idTipoCaracteristica']
+            idCaracteristica = caract['id_caracteristica']
+            idTipoCaracteristica = caract['id_tipo_caracteristica']
 
             cursor.execute("""
-                SELECT idProdutoCaracteristica 
+                SELECT id_produto_caracteristica 
                 FROM ProdutoCaracteristica
-                WHERE idProduto = %s AND idCaracteristica = %s AND idTipoCaracteristica = %s
+                WHERE id_produto = %s AND id_caracteristica = %s AND id_tipo_caracteristica = %s
             """, (idProduto, idCaracteristica, idTipoCaracteristica))
             prod_caract = cursor.fetchone()
             if not prod_caract:
-                raise Exception(f"ProdutoCaracteristica não encontrada para produto {idProduto} e caract {idCaracteristica}")
-            idProdutoCaracteristica = prod_caract['idProdutoCaracteristica']
+                print(f"⚠️  ProdutoCaracteristica não encontrada para produto {idProduto} e caract {idCaracteristica}")
+                print(f"    Criando relacionamento automaticamente...")
+                # Criar o relacionamento automaticamente
+                cursor.execute("""
+                    INSERT INTO ProdutoCaracteristica (id_produto, id_caracteristica, id_tipo_caracteristica)
+                    VALUES (%s, %s, %s)
+                """, (idProduto, idCaracteristica, idTipoCaracteristica))
+                idProdutoCaracteristica = cursor.lastrowid
+                print(f"    ✅ ProdutoCaracteristica criada com ID: {idProdutoCaracteristica}")
+            else:
+                idProdutoCaracteristica = prod_caract['id_produto_caracteristica']
 
             # Buscar idSaida pelo numeroPedido
-            cursor.execute("SELECT idSaida FROM Saida WHERE numeroPedido = %s", (row['numeroPedido'],))
+            cursor.execute("SELECT id_saida FROM Saida WHERE numero_pedido = %s", (row['numeroPedido'],))
             saida = cursor.fetchone()
             if not saida:
                 raise Exception(f"Saída não encontrada para numeroPedido {row['numeroPedido']}")
-            idSaida = saida['idSaida']
+            idSaida = saida['id_saida']
+
+            # Verificar se tem coluna quantidade
+            if 'quantidade' in df.columns and pd.notna(row['quantidade']):
+                quantidade = row['quantidade']
+            else:
+                quantidade = 1
+                print(f"    ⚠️  Usando quantidade padrão: 1")
 
             # Inserir item
             sql = """
-                INSERT INTO ItensSaida (idSaida, idPlataforma, quantidade, idProdutoCaracteristica, idCaracteristica, idTipoCaracteristica, idProduto)
+                INSERT INTO ItensSaida (id_saida, id_plataforma, quantidade, id_produto_caracteristica, id_caracteristica, id_tipo_caracteristica, id_produto)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
             cursor.execute(sql, (
                 idSaida,
                 fkPlataforma,
-                row['quantidade'],
+                quantidade,
                 idProdutoCaracteristica,
                 idCaracteristica,
                 idTipoCaracteristica,
